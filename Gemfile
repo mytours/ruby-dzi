@@ -1,9 +1,10 @@
 source "https://rubygems.org"
 
-gem 'rmagick', require: 'rmagick'
-gem 'aws-sdk'
+gem 'mini_magick'
+gem 'aws-sdk-s3'
 
 group :test do
   gem 'rspec'
+  gem 'byebug'
 end
 
