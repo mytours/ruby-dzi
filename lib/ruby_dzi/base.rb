@@ -1,11 +1,12 @@
 require 'rubygems'
 require 'fileutils'
-require 'rmagick'
+require 'mini_magick'
 require 'open-uri'
+require 'net/http'
 
 module RubyDzi
   class Base
-    include Magick
+    include MiniMagick
 
     attr_accessor :image_path, :name, :format, :output_ext, :quality, :dir, :tile_size, :overlap
 
@@ -17,55 +18,20 @@ module RubyDzi
       @dir        = '.'
       @tile_size  = 254
       @overlap    = 1
-      @min_level  = 6
+      @min_level  = 2
       @output_ext = 'dzi'
 
+      @source_image = nil
       @image_path = image_path
-    end
-
-    def generate_simple!(name, format = 'jpg')
-      image = setup_image_for_tile_generation(name, format)
-      orig_width, orig_height = image.columns, image.rows
-
-      tile_size = [orig_width, orig_height].max
-      overlap   = 0
-
-      max_level(orig_width, orig_height).downto(@min_level) do |level|
-        current_level_dir = File.join(@levels_root_dir, level.to_s)
-        @store.create_dir current_level_dir
-
-        dest_path = File.join(current_level_dir, "0_0.#{@format}")
-        tile_width, tile_height = tile_dimensions(0, 0, tile_size, overlap)
-
-        if level == max_level(orig_width, orig_height)
-          @original_path = dest_path
-          save_cropped_image(image, dest_path, 0, 0, tile_width, tile_height, @quality)
-        else
-          FileUtils.ln_s @original_path, dest_path
-        end
-      end
-
-      # generate xml descriptor and write file
-      write_xml_descriptor(
-        @xml_descriptor_path,
-        :tile_size => tile_size,
-        :overlap   => overlap,
-        :format    => @format,
-        :width     => orig_width,
-        :height    => orig_height
-      )
-
-      # destroy main image to free up allocated memory
-      image.destroy!
     end
 
     def generate!(name, format = 'jpg')
       image = setup_image_for_tile_generation(name, format)
-      orig_width, orig_height = image.columns, image.rows
+      orig_width, orig_height = image.width, image.height
 
       # iterate over all levels (= zoom stages)
       max_level(orig_width, orig_height).downto(@min_level) do |level|
-        width, height = image.columns, image.rows
+        width, height = image.width, image.height
 
         current_level_dir = File.join(@levels_root_dir, level.to_s)
         @store.create_dir current_level_dir
@@ -79,7 +45,8 @@ module RubyDzi
             dest_path = File.join(current_level_dir, "#{col_count}_#{row_count}.#{@format}")
             tile_width, tile_height = tile_dimensions(x, y, @tile_size, @overlap)
 
-            save_cropped_image(image, dest_path, x, y, tile_width, tile_height, @quality)
+            tmp_image = MiniMagick::Image.open(image.tempfile.path)
+            save_cropped_image(tmp_image, dest_path, x, y, tile_width, tile_height, @quality)
 
             y += (tile_height - (2 * @overlap))
             row_count += 1
@@ -88,7 +55,7 @@ module RubyDzi
           col_count += 1
         end
 
-        image.resize!(0.5)
+        image.resize("50%")
       end
 
       # generate xml descriptor and write file
@@ -121,7 +88,8 @@ module RubyDzi
       remove_files!
 
       image = get_image(@image_path)
-      image.strip! # remove meta information
+
+      image.strip # remove meta information
       image
     end
 
@@ -140,21 +108,19 @@ module RubyDzi
     end
 
     def save_cropped_image(src, dest, x, y, width, height, quality = 75)
-      if src.is_a? Magick::Image
+      if src.is_a? MiniMagick::Image
         img = src
       else
-        img = Magick::Image::read(src).first
+        img = MiniMagick::Image.open(src)
       end
 
       quality = quality * 100 if quality < 1
 
-      # The crop method retains the offset information in the cropped image.
-      # To reset the offset data, adding true as the last argument to crop.
-      cropped = img.crop(x, y, width, height, true)
-      @store.save_image_file cropped, dest, quality
+      img.crop("#{width}x#{height}+#{x}+#{y}")
+      @store.save_image_file img, dest, quality
 
-      # destroy images to free up allocated memory
-      cropped.destroy!
+      # destroy cropped image to free up allocated memory
+      img.destroy!
     end
 
     def write_xml_descriptor(path, attr)
@@ -177,6 +143,7 @@ module RubyDzi
 
     def valid_url?(urlStr)
       url = URI.parse(urlStr)
+
       Net::HTTP.start(url.host, url.port) do |http|
         return http.head(url.request_uri).code == "200"
       end
@@ -184,14 +151,7 @@ module RubyDzi
 
     def get_image(image_path)
       image = nil
-
-      if File.file?(image_path)
-        image = Image::read(image_path).first
-      elsif valid_url?(image_path)
-        f = open(image_path)
-        image = Image.from_blob(f.read).first
-        f.close
-      end
+      image = MiniMagick::Image.open(image_path)
 
       return image
     end
