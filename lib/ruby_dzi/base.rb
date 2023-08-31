@@ -117,6 +117,12 @@ module RubyDzi
       quality = quality * 100 if quality < 1
 
       img.crop("#{width}x#{height}+#{x}+#{y}")
+
+      # for deep zoom images we want to have 8-bit tiles, so we need to set it explicitly as it is not set by default
+      img.format 'jpg'
+      img.colorspace 'sRGB'
+      img.depth 8
+
       @store.save_image_file img, dest, quality
 
       # destroy cropped image to free up allocated memory
