@@ -8,18 +8,19 @@ module RubyDzi
   class Base
     include MiniMagick
 
-    attr_accessor :image_path, :name, :format, :output_ext, :quality, :dir, :tile_size, :overlap
+    attr_accessor :image_path, :name, :format, :output_ext, :quality, :dir, :tile_size, :overlap, :max_dimension
 
     def initialize(image_path, store = FileStore.new)
       @store = store
 
       # set defaults
-      @quality    = 75
-      @dir        = '.'
-      @tile_size  = 254
-      @overlap    = 1
-      @min_level  = 2
-      @output_ext = 'dzi'
+      @quality       = 75
+      @dir           = '.'
+      @tile_size     = 254
+      @overlap       = 1
+      @min_level     = 2
+      @output_ext    = 'dzi'
+      @max_dimension = 6048
 
       @source_image = nil
       @image_path = image_path
@@ -89,8 +90,18 @@ module RubyDzi
 
       image = get_image(@image_path)
 
+      image = resize_to_max_dimension(image) # if an image is larger than max_dimension, it takes too much time and resources to process it
+
       image.strip # remove meta information
       image
+    end
+
+    def resize_to_max_dimension(image)
+      return image if image.width <= @max_dimension && image.height <= @max_dimension
+
+      scale_factor = [@max_dimension.to_f / image.width, @max_dimension.to_f / image.height].min
+      new_size = "#{(scale_factor * 100).round}%"
+      image.resize(new_size)
     end
 
     def tile_dimensions(x, y, tile_size, overlap)
