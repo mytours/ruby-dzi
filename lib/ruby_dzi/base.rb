@@ -11,6 +11,8 @@ module RubyDzi
     attr_accessor :image_path, :name, :format, :output_ext, :quality, :dir, :tile_size, :overlap, :max_dimension
 
     def initialize(image_path, store = FileStore.new)
+      @logger = Logger.new($stdout)
+
       @store = store
 
       # set defaults
@@ -90,18 +92,25 @@ module RubyDzi
 
       image = get_image(@image_path)
 
+      @logger.info "BEFORE image size: #{image.width}x#{image.height}"
       image = resize_to_max_dimension(image) # if an image is larger than max_dimension, it takes too much time and resources to process it
+      @logger.info "AFTER image size: #{image.width}x#{image.height}"
 
       image.strip # remove meta information
       image
     end
 
     def resize_to_max_dimension(image)
+      @logger.info "Original image size: #{image.width}x#{image.height}"
       return image if image.width <= @max_dimension && image.height <= @max_dimension
 
       scale_factor = [@max_dimension.to_f / image.width, @max_dimension.to_f / image.height].min
+      @logger.info "Scale factor: #{scale_factor}"
       new_size = "#{(scale_factor * 100).round}%"
-      image.resize(new_size)
+      @logger.info "Start resizing to #{new_size}"
+      result = image.resize(new_size)
+      @logger.info "Resizing finished"
+      result
     end
 
     def tile_dimensions(x, y, tile_size, overlap)
